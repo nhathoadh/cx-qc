@@ -1,0 +1,9 @@
+{
+  "/api/criteria/route": "app/api/criteria/route.js",
+  "/api/criteria/[criteriaCode]/[applyDate]/route": "app/api/criteria/[criteriaCode]/[applyDate]/route.js",
+  "/detail/page": "app/detail/page.js",
+  "/events/page": "app/events/page.js",
+  "/admin/employees/page": "app/admin/employees/page.js",
+  "/admin/criteria/page": "app/admin/criteria/page.js",
+  "/admin/page": "app/admin/page.js"
+}

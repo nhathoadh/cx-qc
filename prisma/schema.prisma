@@ -1,0 +1,147 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// NHÓM DANH MỤC (DIMENSION TABLES)
+// =============================================================================
+
+/// Nhân viên trong hệ thống
+model DimEmployee {
+  id           Int     @id @default(autoincrement())
+  employeeCode String  @unique @map("employee_code") @db.VarChar(50)
+  shortName    String  @map("short_name") @db.VarChar(100)
+  role         String  @db.VarChar(50) // Sale, KTV, Leader...
+  team         String  @db.VarChar(100) // Logan, Hi5, Fabulous...
+  area         String  @db.VarChar(10) // HCM, HN
+  isActive     Boolean @default(true) @map("is_active")
+
+  // Relations
+  checkEvents     FactCheckEvent[]
+  qcFeedbacks     FactQcFeedback[]
+  monthlySummaries FactMonthlySummary[]
+
+  @@map("dim_employees")
+}
+
+/// Nhóm tiêu chí, có thể thay đổi theo tháng (versioned by apply_date)
+model DimCriteriaGroup {
+  groupCode    String @map("group_code") @db.VarChar(50)
+  applyDate    DateTime @map("apply_date") @db.Date
+  groupName    String @map("group_name") @db.VarChar(200)
+  conditionSql String @map("condition_sql") @db.Text
+
+  // Relations (back-references to versioned criteria)
+  criteria DimCriteria[]
+
+  @@id([groupCode, applyDate])
+  @@map("dim_criteria_groups")
+}
+
+/// Tiêu chí chấm điểm, versioned theo tháng
+model DimCriteria {
+  criteriaCode    String   @map("criteria_code") @db.VarChar(50)
+  applyDate       DateTime @map("apply_date") @db.Date
+  groupCode       String   @map("group_code") @db.VarChar(50)
+  description     String   @db.Text
+  employeeType    String   @map("employee_type") @db.VarChar(50) // Sale, KTV, Newbie...
+  threshold       Decimal  @db.Decimal(10, 4)
+  weight          Decimal  @db.Decimal(5, 4) // VD: 0.05 = 5%
+  severityScore   Decimal  @map("severity_score") @db.Decimal(10, 4)
+  calculationSql  String   @map("calculation_sql") @db.Text
+  active          Boolean  @default(true)
+
+  // Relations
+  group        DimCriteriaGroup @relation(fields: [groupCode, applyDate], references: [groupCode, applyDate])
+  monthlyScores FactMonthlyScore[]
+
+  @@id([criteriaCode, applyDate])
+  @@map("dim_criteria")
+}
+
+// =============================================================================
+// NHÓM DỮ LIỆU THÔ (FACT TABLES - Events)
+// =============================================================================
+
+/// Sự kiện kiểm định, công chứng, chốt deal, check-in...
+model FactCheckEvent {
+  id                  Int      @id @default(autoincrement())
+  eventType           String   @map("event_type") @db.VarChar(50) // INSPECTION, NOTARY, CLOSING_DEAL, CHECK_IN...
+  referenceId         String?  @map("reference_id") @db.Uuid
+  eventTimestamp      DateTime @map("event_timestamp")
+  actorId             Int      @map("actor_id")
+  isUniform           Boolean? @map("is_uniform")
+  ontimeStatusDetail  String?  @map("ontime_status_detail") @db.VarChar(100) // Đúng giờ, Trễ 15p...
+  location            String?  @db.Text
+  notes               String?  @db.Text
+
+  // Relations
+  actor DimEmployee @relation(fields: [actorId], references: [id])
+
+  @@map("fact_check_events")
+}
+
+/// Phản hồi từ khách hàng (QC feedback)
+model FactQcFeedback {
+  id            Int      @id @default(autoincrement())
+  customerPhone String?  @map("customer_phone") @db.VarChar(20)
+  saleId        Int      @map("sale_id")
+  carInfo       String?  @map("car_info") @db.Text
+  rating        Decimal? @db.Decimal(3, 1)
+  feedbackText  String?  @map("feedback_text") @db.Text
+  feedbackAt    DateTime? @map("feedback_at")
+  criteriaCode  String?  @map("criteria_code") @db.VarChar(50)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  sale DimEmployee @relation(fields: [saleId], references: [id])
+
+  @@map("fact_qc_feedback")
+}
+
+// =============================================================================
+// NHÓM KẾT QUẢ (FACT TABLES - Calculated Results)
+// =============================================================================
+
+/// Tổng hợp điểm theo tháng của nhân viên
+model FactMonthlySummary {
+  id             Int     @id @default(autoincrement())
+  employeeId     Int     @map("employee_id")
+  applyDate      DateTime @map("apply_date") @db.Date
+  overallScore   Decimal? @map("overall_score") @db.Decimal(10, 4)
+  rank           Int?
+  commissionRate Decimal? @map("commission_rate") @db.Decimal(5, 4)
+  isFinalized    Boolean  @default(false) @map("is_finalized")
+
+  // Relations
+  employee DimEmployee        @relation(fields: [employeeId], references: [id])
+  scores   FactMonthlyScore[]
+
+  @@unique([employeeId, applyDate])
+  @@map("fact_monthly_summary")
+}
+
+/// Điểm chi tiết theo từng tiêu chí mỗi tháng
+model FactMonthlyScore {
+  id              Int      @id @default(autoincrement())
+  summaryId       Int      @map("summary_id")
+  criteriaCode    String   @map("criteria_code") @db.VarChar(50)
+  applyDate       DateTime @map("apply_date") @db.Date
+  rawValue        Decimal? @map("raw_value") @db.Decimal(10, 4)
+  calculatedScore Decimal? @map("calculated_score") @db.Decimal(10, 4)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  summary  FactMonthlySummary @relation(fields: [summaryId], references: [id])
+  criteria DimCriteria        @relation(fields: [criteriaCode, applyDate], references: [criteriaCode, applyDate])
+
+  @@map("fact_monthly_scores")
+}

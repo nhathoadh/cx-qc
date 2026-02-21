@@ -1,0 +1,19 @@
+# Node.js artifacts
+node_modules/
+dist/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# Prisma
+prisma/migrations/*.sql
+# Note: Keep schema.prisma in git
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
